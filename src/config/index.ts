@@ -23,3 +23,5 @@ export const port = process.env.PORT || 4000;
 export const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS!);
 export const JWT_SECRET = process.env.JWT_SECRET!;
 export const EXPIRESIN = process.env.EXPIRESIN!;
+export const REDIS_HOST = process.env.REDIS_HOST!;
+export const REDIS_PORT = parseInt(process.env.REDIS_PORT!, 10);

@@ -5,6 +5,7 @@ import { generateToken } from "../utils/jwtUtils";
 import { v4 as uuidv4 } from "uuid";
 import { JwtPayload } from "jsonwebtoken";
 import {
+  clearLoginAttempts,
   logFailedAttempt,
   logger,
   loginAttemptCounter,
@@ -79,27 +80,26 @@ export const loginUser = [
     const { email, password } = req.body;
 
     try {
-      logFailedAttempt(email);
+      await logFailedAttempt(email); 
 
-      const user = (await User.findOne({
-        where: { email },
-      })) as unknown as UserAttributes;
+      const user = await User.findOne({ where: { email } }) as unknown as UserAttributes;
 
       if (!user || !(await comparePassword(password, user.password))) {
         logger.warn(`Failed login attempt for email: ${email}`);
-        return res.status(401).json({ message: "Invalid email or password" });
+        return res.status(401).json({ message: 'Invalid email or password' });
       }
 
-      loginAttemptCounter.delete(email);
+      await clearLoginAttempts(email); 
 
       const token = generateToken(user.id);
       res.json({ token });
     } catch (error: any) {
-      logger.error("Login failed: " + error.message);
-      res.status(500).json({ message: "Server error", error: error.message });
+      logger.error(`Login failed for email ${email}: ${error.message}`);
+      res.status(500).json({ message: error.message });
     }
   },
 ];
+
 
 export const getUserDetails = async (
   req: JwtPayload,

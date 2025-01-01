@@ -1,5 +1,6 @@
 import rateLimit from "express-rate-limit";
 import winston from "winston";
+import redisClient from "./redisClient";
 
 const logger = winston.createLogger({
   level: "info",
@@ -29,29 +30,47 @@ const loginAttemptCounter = new Map<
 >();
 
 const MAX_LOGIN_ATTEMPTS = 5;
-const LOCKOUT_TIME = 30 * 60 * 1000;
+const LOCKOUT_TIME = 5 * 60 * 1000;
 
-const logFailedAttempt = (email: string) => {
+export const logFailedAttempt = async (email: string): Promise<void> => {
   const currentTime = Date.now();
-  const attempts = loginAttemptCounter.get(email) || {
-    attempts: 0,
-    lastAttempt: currentTime,
-  };
+  const lockKey = `login:${email}:lock`;
+  const attemptKey = `login:${email}:attempts`;
 
-  if (currentTime - attempts.lastAttempt < LOCKOUT_TIME) {
-    if (attempts.attempts >= MAX_LOGIN_ATTEMPTS) {
-      throw new Error(
-        "Account is locked due to multiple failed login attempts. Please try again later."
-      );
-    }
-  } else {
-    loginAttemptCounter.set(email, { attempts: 0, lastAttempt: currentTime });
+  const isLocked = await redisClient.get(lockKey);
+
+  if (isLocked) {
+    throw new Error(
+      "Account is locked due to multiple failed login attempts. Please try again later."
+    );
   }
 
-  loginAttemptCounter.set(email, {
-    attempts: attempts.attempts + 1,
-    lastAttempt: currentTime,
+  const attempts = parseInt((await redisClient.get(attemptKey)) || "0", 10);
+
+  if (attempts >= MAX_LOGIN_ATTEMPTS) {
+    await redisClient.set(lockKey, "true", { EX: LOCKOUT_TIME / 1000 });
+    await redisClient.del(attemptKey);
+    throw new Error(
+      "Account is locked due to multiple failed login attempts. Please try again in the next 5 mins."
+    );
+  }
+
+  await redisClient.set(attemptKey, (attempts + 1).toString(), {
+    EX: LOCKOUT_TIME / 1000,
   });
 };
 
-export { logger, registerRateLimiter, loginRateLimiter, logFailedAttempt, loginAttemptCounter };
+export const clearLoginAttempts = async (email: string): Promise<void> => {
+  const attemptKey = `login:${email}:attempts`;
+  const lockKey = `login:${email}:lock`;
+
+  await redisClient.del(attemptKey);
+  await redisClient.del(lockKey);
+};
+
+export {
+  logger,
+  registerRateLimiter,
+  loginRateLimiter,
+  loginAttemptCounter,
+};
